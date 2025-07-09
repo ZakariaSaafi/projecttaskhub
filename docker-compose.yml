@@ -1,28 +1,27 @@
 version: '3.8'
 
 services:
-  # =============== DATABASES ===============
+  # =============== INFRASTRUCTURE SERVICES ===============
   postgresql:
     image: postgres:15-alpine
     container_name: postgresql
     environment:
-      POSTGRES_DB: projectdb
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_MULTIPLE_DATABASES: projectdb,keycloak
+      POSTGRES_DB: postgres
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - projecttaskhub-network
+      - ./scripts/init-postgres.sh:/docker-entrypoint-initdb.d/init-postgres.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - projecttaskhub-network
 
   mongodb:
     image: mongo:7-jammy
@@ -35,41 +34,35 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
-      - ./scripts/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js
-    networks:
-      - projecttaskhub-network
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - projecttaskhub-network
 
-  # =============== MESSAGE BROKER ===============
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
-      RABBITMQ_DEFAULT_VHOST: /
     ports:
       - "5672:5672"
       - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
-      - ./config/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
-      - ./config/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json
-    networks:
-      - projecttaskhub-network
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - projecttaskhub-network
 
-  # =============== IDENTITY PROVIDER ===============
   keycloak:
     image: quay.io/keycloak/keycloak:23.0
     container_name: keycloak
@@ -86,115 +79,81 @@ services:
       KC_HOSTNAME_STRICT_HTTPS: false
       KC_HTTP_ENABLED: true
       KC_HEALTH_ENABLED: true
-      KC_METRICS_ENABLED: true
     ports:
       - "8180:8080"
-    volumes:
-      - ./config/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
-      - keycloak_data:/opt/keycloak/data
     command:
       - start-dev
       - --import-realm
     depends_on:
       postgresql:
         condition: service_healthy
-    networks:
-      - projecttaskhub-network
+    volumes:
+      - ./config/keycloak:/opt/keycloak/data/import
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
+    networks:
+      - projecttaskhub-network
 
-  # =============== CONFIG SERVER ===============
+  # =============== SPRING BOOT SERVICES ===============
   config-server:
     build:
       context: ./config-server
       dockerfile: Dockerfile
     container_name: config-server
     environment:
-      JAVA_OPTS: "-Xmx512m -Xms256m"
       SPRING_PROFILES_ACTIVE: docker
+      JAVA_OPTS: "-Xmx512m -Xms256m"
     ports:
       - "8888:8888"
     volumes:
       - ./config:/app/config
-    networks:
-      - projecttaskhub-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8888/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 45s
     restart: unless-stopped
+    networks:
+      - projecttaskhub-network
 
-  # =============== DISCOVERY SERVER ===============
   discovery-server:
     build:
       context: ./discovery-server
       dockerfile: Dockerfile
     container_name: discovery-server
     environment:
-      JAVA_OPTS: "-Xmx512m -Xms256m"
       SPRING_PROFILES_ACTIVE: docker
       SPRING_CLOUD_CONFIG_URI: http://config-server:8888
       SPRING_CLOUD_CONFIG_USERNAME: config-admin
       SPRING_CLOUD_CONFIG_PASSWORD: config-pass
+      JAVA_OPTS: "-Xmx512m -Xms256m"
     ports:
       - "8761:8761"
     depends_on:
       config-server:
         condition: service_healthy
-    networks:
-      - projecttaskhub-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 60s
     restart: unless-stopped
-
-  # =============== API GATEWAY ===============
-  api-gateway:
-    build:
-      context: ./api-gateway
-      dockerfile: Dockerfile
-    container_name: api-gateway
-    environment:
-      JAVA_OPTS: "-Xmx1g -Xms512m"
-      SPRING_PROFILES_ACTIVE: docker
-      SPRING_CLOUD_CONFIG_URI: http://config-server:8888
-      SPRING_CLOUD_CONFIG_USERNAME: config-admin
-      SPRING_CLOUD_CONFIG_PASSWORD: config-pass
-      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://discovery-server:8761/eureka/
-      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://keycloak:8080/realms/projecttaskhub
-    ports:
-      - "8080:8080"
-    depends_on:
-      config-server:
-        condition: service_healthy
-      discovery-server:
-        condition: service_healthy
-      keycloak:
-        condition: service_healthy
     networks:
       - projecttaskhub-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    restart: unless-stopped
 
-  # =============== PROJECT SERVICE ===============
   project-service:
     build:
       context: ./project-service
       dockerfile: Dockerfile
     container_name: project-service
     environment:
-      JAVA_OPTS: "-Xmx1g -Xms512m"
       SPRING_PROFILES_ACTIVE: docker
       SPRING_CLOUD_CONFIG_URI: http://config-server:8888
       SPRING_CLOUD_CONFIG_USERNAME: config-admin
@@ -208,6 +167,7 @@ services:
       SPRING_RABBITMQ_USERNAME: guest
       SPRING_RABBITMQ_PASSWORD: guest
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://keycloak:8080/realms/projecttaskhub
+      JAVA_OPTS: "-Xmx1g -Xms512m"
     ports:
       - "8081:8081"
     depends_on:
@@ -221,23 +181,22 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_healthy
-    networks:
-      - projecttaskhub-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 90s
     restart: unless-stopped
+    networks:
+      - projecttaskhub-network
 
-  # =============== TASK SERVICE ===============
   task-service:
     build:
       context: ./task-service
       dockerfile: Dockerfile
     container_name: task-service
     environment:
-      JAVA_OPTS: "-Xmx1g -Xms512m"
       SPRING_PROFILES_ACTIVE: docker
       SPRING_CLOUD_CONFIG_URI: http://config-server:8888
       SPRING_CLOUD_CONFIG_USERNAME: config-admin
@@ -249,6 +208,7 @@ services:
       SPRING_RABBITMQ_USERNAME: guest
       SPRING_RABBITMQ_PASSWORD: guest
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://keycloak:8080/realms/projecttaskhub
+      JAVA_OPTS: "-Xmx1g -Xms512m"
     ports:
       - "8082:8082"
     depends_on:
@@ -262,16 +222,52 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_healthy
-    networks:
-      - projecttaskhub-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 90s
     restart: unless-stopped
+    networks:
+      - projecttaskhub-network
 
-# =============== VOLUMES ===============
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_CLOUD_CONFIG_URI: http://config-server:8888
+      SPRING_CLOUD_CONFIG_USERNAME: config-admin
+      SPRING_CLOUD_CONFIG_PASSWORD: config-pass
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://discovery-server:8761/eureka/
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://keycloak:8080/realms/projecttaskhub
+      JAVA_OPTS: "-Xmx1g -Xms512m"
+    ports:
+      - "8080:8080"
+    depends_on:
+      config-server:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+      project-service:
+        condition: service_healthy
+      task-service:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - projecttaskhub-network
+
 volumes:
   postgres_data:
     driver: local
@@ -279,10 +275,7 @@ volumes:
     driver: local
   rabbitmq_data:
     driver: local
-  keycloak_data:
-    driver: local
 
-# =============== NETWORKS ===============
 networks:
   projecttaskhub-network:
     driver: bridge

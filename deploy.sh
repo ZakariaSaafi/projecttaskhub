@@ -13,9 +13,8 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # Variables
-PROJECT_NAME="ProjectTaskHub"
-LOG_FILE="logs/deploy-$(date +%Y%m%d_%H%M%S).log"
 DOCKER_COMPOSE_CMD=""
+LOG_FILE="logs/deploy-$(date +%Y%m%d_%H%M%S).log"
 
 # Créer le répertoire logs
 mkdir -p logs
@@ -37,7 +36,6 @@ log_warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1" | tee -a "$LOG_FILE"
 }
 
-# Afficher une bannière
 print_banner() {
     echo ""
     echo -e "${BLUE}===============================================${NC}"
@@ -57,11 +55,9 @@ check_docker() {
     
     if ! docker info > /dev/null 2>&1; then
         log_error "Docker n'est pas en cours d'exécution"
-        log_info "Démarrez Docker Desktop et réessayez"
         exit 1
     fi
     
-    # Déterminer la commande Docker Compose
     if command -v docker-compose &> /dev/null; then
         DOCKER_COMPOSE_CMD="docker-compose"
     elif docker compose version &> /dev/null 2>&1; then
@@ -74,99 +70,151 @@ check_docker() {
     log_success "Docker opérationnel avec $DOCKER_COMPOSE_CMD"
 }
 
-# Vérifier la structure du projet
-check_structure() {
-    log_info "Vérification de la structure du projet..."
+# Vérifier les JAR files
+check_jar_files() {
+    log_info "Vérification des fichiers JAR..."
     
-    if [ ! -f "docker-compose.yml" ]; then
-        log_error "Fichier docker-compose.yml manquant"
-        exit 1
+    local missing_jars=()
+    local services=("config-server" "discovery-server" "api-gateway" "project-service" "task-service")
+    
+    for service in "${services[@]}"; do
+        local jar_file="${service}/target/${service}-1.0.0.jar"
+        if [ ! -f "$jar_file" ]; then
+            missing_jars+=("$service")
+        fi
+    done
+    
+    if [ ${#missing_jars[@]} -gt 0 ]; then
+        log_warning "Services non compilés: ${missing_jars[*]}"
+        log_info "Compilation des services manquants..."
+        
+        # Compiler shared-dto d'abord
+        if [ -d "shared-dto" ]; then
+            log_info "Compilation de shared-dto..."
+            cd shared-dto && mvn clean install -DskipTests -q && cd ..
+        fi
+        
+        # Compiler les services manquants
+        for service in "${missing_jars[@]}"; do
+            if [ -d "$service" ]; then
+                log_info "Compilation de $service..."
+                cd "$service" && mvn clean package -DskipTests -q && cd ..
+            fi
+        done
+    else
+        log_success "Tous les JAR sont présents"
     fi
-    
-    log_success "Structure du projet OK"
 }
 
-# Créer les fichiers de configuration manquants
-create_configs() {
-    log_info "Création des configurations nécessaires..."
+# Créer les configurations nécessaires
+setup_configs() {
+    log_info "Configuration de l'environnement..."
     
     # Créer les répertoires
     mkdir -p {config/keycloak,config/rabbitmq,scripts,data,backups}
     
-    # Configuration docker-compose.yml basique
-    if [ ! -f "docker-compose.yml" ]; then
-        log_info "Création de docker-compose.yml..."
-        cat > docker-compose.yml << 'EOF'
-version: '3.8'
+    # Script d'initialisation PostgreSQL
+    if [ ! -f "scripts/init-postgres.sh" ]; then
+        log_info "Création du script d'initialisation PostgreSQL..."
+        cat > scripts/init-postgres.sh << 'EOF'
+#!/bin/bash
+set -e
 
-services:
-  postgresql:
-    image: postgres:15-alpine
-    container_name: postgresql
-    environment:
-      POSTGRES_DB: projectdb
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
+echo "🔧 Initialisation des bases de données PostgreSQL..."
 
-  mongodb:
-    image: mongo:7-jammy
-    container_name: mongodb
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: admin123
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-    restart: unless-stopped
+create_database() {
+    local database=$1
+    echo "📊 Création de la base de données: $database"
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+        SELECT 'CREATE DATABASE $database'
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$database')\gexec
+EOSQL
+}
 
-  rabbitmq:
-    image: rabbitmq:3-management-alpine
-    container_name: rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    restart: unless-stopped
+create_database "keycloak"
+create_database "projectdb"
 
-  keycloak:
-    image: quay.io/keycloak/keycloak:23.0
-    container_name: keycloak
-    environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin123
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgresql:5432/keycloak
-      KC_DB_USERNAME: postgres
-      KC_DB_PASSWORD: postgres
-      KC_HOSTNAME: localhost
-      KC_HOSTNAME_PORT: 8180
-      KC_HTTP_ENABLED: true
-      KC_HEALTH_ENABLED: true
-    ports:
-      - "8180:8080"
-    command: start-dev --import-realm
-    depends_on:
-      - postgresql
-    restart: unless-stopped
+echo "✅ Bases de données créées avec succès!"
 
-volumes:
-  postgres_data:
-  mongo_data:
-  rabbitmq_data:
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "projectdb" <<-EOSQL
+    CREATE TABLE IF NOT EXISTS projects (
+        id BIGSERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        start_date TIMESTAMP NOT NULL,
+        end_date TIMESTAMP,
+        status VARCHAR(50) NOT NULL,
+        owner VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner);
+    CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+
+    INSERT INTO projects (name, description, start_date, status, owner) 
+    VALUES 
+        ('Projet Demo', 'Projet de démonstration', CURRENT_TIMESTAMP, 'PLANNING', 'admin'),
+        ('Projet Test', 'Projet de test', CURRENT_TIMESTAMP, 'IN_PROGRESS', 'user1')
+    ON CONFLICT DO NOTHING;
+EOSQL
+
+echo "🎉 Initialisation PostgreSQL terminée!"
+EOF
+        chmod +x scripts/init-postgres.sh
+    fi
+    
+    # Configuration Keycloak basique
+    if [ ! -f "config/keycloak/realm-export.json" ]; then
+        log_info "Création de la configuration Keycloak..."
+        cat > config/keycloak/realm-export.json << 'EOF'
+{
+  "realm": "projecttaskhub",
+  "enabled": true,
+  "displayName": "ProjectTaskHub",
+  "clients": [
+    {
+      "clientId": "projecttaskhub-api",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "bearerOnly": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true
+    }
+  ],
+  "roles": {
+    "realm": [
+      {"name": "USER", "description": "Utilisateur standard"},
+      {"name": "ADMIN", "description": "Administrateur système"}
+    ]
+  },
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "User",
+      "email": "admin@projecttaskhub.com",
+      "credentials": [{"type": "password", "value": "admin123", "temporary": false}],
+      "realmRoles": ["ADMIN", "USER"]
+    },
+    {
+      "username": "user1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "John",
+      "lastName": "Doe",
+      "email": "user1@projecttaskhub.com",
+      "credentials": [{"type": "password", "value": "user123", "temporary": false}],
+      "realmRoles": ["USER"]
+    }
+  ]
+}
 EOF
     fi
     
-    log_success "Configurations créées"
+    log_success "Configuration terminée"
 }
 
 # Arrêter les conteneurs existants
@@ -176,63 +224,36 @@ stop_containers() {
     log_success "Conteneurs arrêtés"
 }
 
-# Démarrer l'infrastructure
-start_infrastructure() {
-    log_info "Démarrage de l'infrastructure..."
+# Démarrer tous les services
+start_all_services() {
+    log_info "Démarrage de tous les services..."
     
-    # Démarrer PostgreSQL
-    log_info "Démarrage de PostgreSQL..."
-    $DOCKER_COMPOSE_CMD up -d postgresql
+    # Démarrer tout d'un coup
+    $DOCKER_COMPOSE_CMD up -d
     
-    # Attendre PostgreSQL
-    log_info "Attente de PostgreSQL..."
-    for i in {1..30}; do
-        if $DOCKER_COMPOSE_CMD exec -T postgresql pg_isready -U postgres >/dev/null 2>&1; then
-            log_success "PostgreSQL prêt"
-            break
-        fi
-        sleep 2
+    log_info "Attente du démarrage des services (cela peut prendre 3-5 minutes)..."
+    
+    # Attendre les services critiques
+    local services=("postgresql:5432" "mongodb:27017" "rabbitmq:5672" "keycloak:8180" "config-server:8888" "discovery-server:8761" "project-service:8081" "task-service:8082" "api-gateway:8080")
+    
+    for service_port in "${services[@]}"; do
+        local service=$(echo $service_port | cut -d':' -f1)
+        local port=$(echo $service_port | cut -d':' -f2)
+        
+        log_info "Attente de $service..."
+        for i in {1..60}; do
+            if nc -z localhost $port 2>/dev/null; then
+                log_success "$service prêt"
+                break
+            fi
+            if [ $i -eq 60 ]; then
+                log_warning "$service prend plus de temps que prévu"
+            fi
+            sleep 5
+        done
     done
     
-    # Démarrer MongoDB
-    log_info "Démarrage de MongoDB..."
-    $DOCKER_COMPOSE_CMD up -d mongodb
-    
-    # Attendre MongoDB
-    log_info "Attente de MongoDB..."
-    sleep 15
-    log_success "MongoDB prêt"
-    
-    # Démarrer RabbitMQ
-    log_info "Démarrage de RabbitMQ..."
-    $DOCKER_COMPOSE_CMD up -d rabbitmq
-    
-    # Attendre RabbitMQ
-    log_info "Attente de RabbitMQ..."
-    sleep 20
-    log_success "RabbitMQ prêt"
-    
-    log_success "Infrastructure démarrée"
-}
-
-# Démarrer Keycloak
-start_keycloak() {
-    log_info "Démarrage de Keycloak..."
-    $DOCKER_COMPOSE_CMD up -d keycloak
-    
-    log_info "Attente de Keycloak (2-3 minutes)..."
-    for i in {1..120}; do
-        if curl -s http://localhost:8180/health/ready >/dev/null 2>&1; then
-            log_success "Keycloak prêt"
-            return 0
-        fi
-        sleep 5
-        if [ $((i % 12)) -eq 0 ]; then
-            log_info "Keycloak se charge encore... (${i}0s)"
-        fi
-    done
-    
-    log_warning "Keycloak prend plus de temps que prévu, mais continuons..."
+    log_success "Démarrage terminé"
 }
 
 # Vérifier l'état des services
@@ -240,132 +261,119 @@ verify_services() {
     log_info "Vérification des services..."
     
     echo ""
-    echo -e "${BLUE}État des conteneurs:${NC}"
+    echo -e "${BLUE}📊 État des conteneurs:${NC}"
     $DOCKER_COMPOSE_CMD ps
     
     echo ""
-    echo -e "${GREEN}Services accessibles:${NC}"
+    echo -e "${GREEN}🌐 URLs de test:${NC}"
     
-    # Vérifier PostgreSQL
-    if nc -z localhost 5432 2>/dev/null; then
-        echo "✅ PostgreSQL: http://localhost:5432"
-    else
-        echo "❌ PostgreSQL: Non accessible"
-    fi
+    local endpoints=(
+        "config-server:8888:/actuator/health"
+        "discovery-server:8761:/actuator/health"
+        "project-service:8081:/actuator/health"
+        "task-service:8082:/actuator/health"
+        "api-gateway:8080:/actuator/health"
+        "keycloak:8180:/health/ready"
+    )
     
-    # Vérifier MongoDB
-    if nc -z localhost 27017 2>/dev/null; then
-        echo "✅ MongoDB: http://localhost:27017"
-    else
-        echo "❌ MongoDB: Non accessible"
-    fi
-    
-    # Vérifier RabbitMQ
-    if nc -z localhost 15672 2>/dev/null; then
-        echo "✅ RabbitMQ Management: http://localhost:15672"
-    else
-        echo "❌ RabbitMQ: Non accessible"
-    fi
-    
-    # Vérifier Keycloak
-    if nc -z localhost 8180 2>/dev/null; then
-        echo "✅ Keycloak: http://localhost:8180"
-    else
-        echo "❌ Keycloak: Non accessible"
-    fi
+    for endpoint in "${endpoints[@]}"; do
+        local service=$(echo $endpoint | cut -d':' -f1)
+        local port=$(echo $endpoint | cut -d':' -f2 | cut -d'/' -f1)
+        local path=$(echo $endpoint | cut -d':' -f2 | cut -d'/' -f2-)
+        local url="http://localhost:$port/$path"
+        
+        if curl -s "$url" > /dev/null 2>&1; then
+            echo "✅ $service: $url"
+        else
+            echo "❌ $service: $url"
+        fi
+    done
 }
 
 # Afficher les informations finales
 show_final_info() {
     print_banner "DÉPLOIEMENT TERMINÉ !"
     
-    echo -e "${GREEN}🎉 Infrastructure ProjectTaskHub démarrée avec succès !${NC}"
+    echo -e "${GREEN}🎉 ProjectTaskHub déployé avec succès !${NC}"
     echo ""
-    echo -e "${BLUE}🌐 URLs d'accès:${NC}"
+    echo -e "${BLUE}🌐 URLs principales:${NC}"
+    echo "  • API Gateway:          http://localhost:8080"
+    echo "  • Discovery Server:     http://localhost:8761"
     echo "  • Keycloak Admin:       http://localhost:8180/admin"
     echo "  • RabbitMQ Management:  http://localhost:15672"
     echo ""
-    echo -e "${BLUE}🔐 Credentials Keycloak:${NC}"
+    echo -e "${BLUE}🔐 Credentials:${NC}"
+    echo "  • Keycloak Admin: admin / admin123"
+    echo "  • RabbitMQ: guest / guest"
+    echo "  • PostgreSQL: postgres / postgres"
+    echo "  • MongoDB: admin / admin123"
+    echo ""
+    echo -e "${BLUE}👥 Utilisateurs de test:${NC}"
     echo "  • Admin: admin / admin123"
+    echo "  • User: user1 / user123"
     echo ""
-    echo -e "${BLUE}🐰 Credentials RabbitMQ:${NC}"
-    echo "  • User: guest / guest"
+    echo -e "${BLUE}🧪 Test rapide:${NC}"
+    echo "  • Health check: curl http://localhost:8080/actuator/health"
+    echo "  • Authentification: voir README.md"
     echo ""
-    echo -e "${BLUE}📊 Bases de données:${NC}"
-    echo "  • PostgreSQL: localhost:5432 (postgres/postgres)"
-    echo "  • MongoDB: localhost:27017 (admin/admin123)"
+    echo -e "${YELLOW}📋 Commandes utiles:${NC}"
+    echo "  • Voir les logs: $DOCKER_COMPOSE_CMD logs -f [service]"
+    echo "  • Arrêter: $DOCKER_COMPOSE_CMD down"
+    echo "  • Redémarrer: $DOCKER_COMPOSE_CMD restart [service]"
     echo ""
-    echo -e "${YELLOW}📋 Prochaines étapes:${NC}"
-    echo "  1. Accédez à Keycloak: http://localhost:8180/admin"
-    echo "  2. Configurez votre realm 'projecttaskhub'"
-    echo "  3. Créez vos utilisateurs et rôles"
-    echo "  4. Déployez vos services Spring Boot"
-    echo ""
-    echo -e "${BLUE}🔧 Commandes utiles:${NC}"
-    echo "  • Voir les logs: docker-compose logs -f [service]"
-    echo "  • Arrêter: docker-compose down"
-    echo "  • Redémarrer: docker-compose restart [service]"
-    echo ""
-}
-
-# Fonction principale
-main() {
-    print_banner "DÉPLOIEMENT PROJECTTASKHUB"
-    
-    log_info "Démarrage du déploiement..."
-    
-    # Vérifications
-    check_docker
-    check_structure
-    
-    # Préparation
-    create_configs
-    
-    # Déploiement
-    stop_containers
-    start_infrastructure
-    start_keycloak
-    
-    # Vérification
-    verify_services
-    
-    # Information finale
-    show_final_info
-    
-    log_success "Déploiement terminé avec succès !"
 }
 
 # Gestion des erreurs
 handle_error() {
     log_error "Une erreur s'est produite durant le déploiement"
     echo ""
-    echo -e "${YELLOW}🔧 Commandes de dépannage:${NC}"
-    echo "  • Voir les logs: docker-compose logs"
+    echo -e "${YELLOW}🔧 Dépannage:${NC}"
+    echo "  • Logs: $DOCKER_COMPOSE_CMD logs"
     echo "  • Redémarrer Docker Desktop"
-    echo "  • Nettoyer: docker-compose down && docker system prune -f"
-    echo "  • Réessayer: ./deploy.sh"
+    echo "  • Nettoyer: $DOCKER_COMPOSE_CMD down && docker system prune -f"
     exit 1
 }
 
-# Gestion du signal d'interruption
+# Fonction principale
+main() {
+    print_banner "DÉPLOIEMENT PROJECTTASKHUB"
+    
+    log_info "Démarrage du déploiement complet..."
+    
+    # Vérifications et préparation
+    check_docker
+    check_jar_files
+    setup_configs
+    
+    # Déploiement
+    stop_containers
+    start_all_services
+    
+    # Vérification et rapport
+    verify_services
+    show_final_info
+    
+    log_success "Déploiement terminé avec succès !"
+}
+
+# Gestion du signal d'erreur
 trap handle_error ERR
 
 # Point d'entrée
 if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "Usage: ./deploy.sh"
     echo ""
-    echo "Déploie l'infrastructure ProjectTaskHub avec:"
-    echo "  • PostgreSQL (port 5432)"
-    echo "  • MongoDB (port 27017)"
-    echo "  • RabbitMQ (port 5672, management 15672)"
-    echo "  • Keycloak (port 8180)"
+    echo "Déploie ProjectTaskHub complet avec tous les services:"
+    echo "  • Infrastructure: PostgreSQL, MongoDB, RabbitMQ, Keycloak"
+    echo "  • Services Spring: Config, Discovery, Gateway, Project, Task"
     echo ""
     exit 0
 fi
 
 # Vérifier qu'on est dans le bon répertoire
-if [ ! -f "deploy.sh" ]; then
+if [ ! -f "docker-compose.yml" ]; then
     echo -e "${RED}Erreur: Exécutez ce script depuis le répertoire racine du projet${NC}"
+    echo "Le fichier docker-compose.yml doit être présent"
     exit 1
 fi
 
