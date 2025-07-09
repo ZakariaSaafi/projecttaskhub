@@ -1,0 +1,310 @@
+# 🚀 ProjectTaskHub - Plateforme de Gestion de Projets et Tâches
+
+Une plateforme distribuée basée sur une architecture microservices pour gérer des projets et des tâches, utilisant Spring Boot, Docker, et des technologies modernes.
+
+## 🏗️ Architecture
+
+### Composants Principaux
+
+- **Config Server** (Port 8888) - Configuration centralisée
+- **Discovery Server** (Port 8761) - Service de découverte Eureka  
+- **API Gateway** (Port 8080) - Passerelle API avec sécurité
+- **Project Service** (Port 8081) - Gestion des projets (PostgreSQL)
+- **Task Service** (Port 8082) - Gestion des tâches avec CQRS (MongoDB)
+
+### Infrastructure
+
+- **PostgreSQL** - Base de données pour les projets
+- **MongoDB** - Base de données pour les tâches  
+- **RabbitMQ** - Messaging asynchrone
+- **Keycloak** - Authentification et autorisation (SSO)
+
+## 🚀 Installation et Démarrage
+
+### Prérequis
+
+- Java 17+
+- Maven 3.8+
+- Docker & Docker Compose
+- Git
+
+### Installation Rapide
+
+1. **Cloner le projet**
+```bash
+git clone <repository-url>
+cd projecttaskhub
+```
+
+2. **Rendre les scripts exécutables**
+```bash
+chmod +x build.sh deploy.sh test-services.sh stop.sh
+```
+
+3. **Déployer l'application**
+```bash
+./deploy.sh
+```
+
+4. **Tester les services**
+```bash
+./test-services.sh
+```
+
+### Démarrage Manuel
+
+1. **Build des services**
+```bash
+./build.sh
+```
+
+2. **Démarrage avec Docker Compose**
+```bash
+docker-compose up -d
+```
+
+## 🔗 Points d'Accès
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| API Gateway | http://localhost:8080 | Point d'entrée principal |
+| Discovery Server | http://localhost:8761 | Console Eureka |
+| Config Server | http://localhost:8888 | Configuration centralisée |
+| Keycloak Admin | http://localhost:8180/admin | Interface d'administration |
+| RabbitMQ Management | http://localhost:15672 | Interface RabbitMQ |
+
+## 👥 Utilisateurs de Test
+
+| Utilisateur | Mot de passe | Rôles |
+|-------------|--------------|-------|
+| admin | admin123 | ADMIN, USER |
+| user1 | user123 | USER |
+
+## 📋 API Endpoints
+
+### Authentification
+Obtenir un token JWT :
+```bash
+curl -X POST "http://localhost:8180/realms/projecttaskhub/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=password" \
+  -d "client_id=projecttaskhub-api" \
+  -d "username=admin" \
+  -d "password=admin123"
+```
+
+### Projets
+
+- `POST /api/projects` - Créer un projet
+- `GET /api/projects` - Lister tous les projets
+- `GET /api/projects/{id}` - Obtenir un projet par ID
+- `PUT /api/projects/{id}` - Modifier un projet
+- `DELETE /api/projects/{id}` - Supprimer un projet (ADMIN seulement)
+- `GET /api/projects/my-projects` - Mes projets
+- `GET /api/projects/by-status/{status}` - Projets par statut
+
+### Tâches
+
+- `POST /api/tasks` - Créer une tâche
+- `GET /api/tasks` - Lister toutes les tâches
+- `GET /api/tasks/{id}` - Obtenir une tâche par ID
+- `PUT /api/tasks/{id}` - Modifier une tâche
+- `DELETE /api/tasks/{id}` - Supprimer une tâche (ADMIN seulement)
+- `GET /api/tasks/project/{projectId}` - Tâches d'un projet
+- `GET /api/tasks/my-tasks` - Mes tâches
+- `GET /api/tasks/by-status/{status}` - Tâches par statut
+- `GET /api/tasks/by-priority/{priority}` - Tâches par priorité
+
+## 🔒 Sécurité
+
+L'application utilise Keycloak pour l'authentification et l'autorisation :
+
+- **JWT Tokens** - Authentification basée sur des tokens
+- **RBAC** - Contrôle d'accès basé sur les rôles
+- **OAuth2/OIDC** - Standards de sécurité modernes
+
+### Rôles
+
+- **USER** - Peut créer, lire et modifier ses propres projets/tâches
+- **ADMIN** - Accès complet, peut supprimer des éléments
+
+## 🔄 Messaging Asynchrone
+
+L'application utilise RabbitMQ pour la communication entre services :
+
+- **Événements Projet** - Notifications de création/modification/suppression
+- **Événements Tâche** - Notifications de création/modification/suppression
+- **Synchronisation** - Maintien de la cohérence entre services
+
+## 📊 Patterns Implémentés
+
+### CQRS (Task Service)
+- **Commands** - CreateTaskCommand, UpdateTaskCommand, DeleteTaskCommand
+- **Queries** - GetTaskByIdQuery, GetTasksByProjectQuery, etc.
+- **Handlers** - Séparation des responsabilités lecture/écriture
+
+### API Gateway Pattern
+- **Routage** - Redirection vers les services appropriés
+- **Sécurité** - Point d'entrée sécurisé unique
+- **Load Balancing** - Répartition de charge
+
+### Service Discovery
+- **Eureka** - Enregistrement et découverte automatique des services
+- **Health Checks** - Surveillance de l'état des services
+
+## 🛠️ Technologies Utilisées
+
+### Backend
+- **Spring Boot 3.2** - Framework principal
+- **Spring Cloud 2023** - Microservices
+- **Spring Security** - Sécurité
+- **Spring Data JPA** - Persistance relationnelle
+- **Spring Data MongoDB** - Persistance NoSQL
+- **MapStruct** - Mapping DTO/Entity
+
+### Infrastructure
+- **Docker** - Containerisation
+- **PostgreSQL** - Base de données relationnelle
+- **MongoDB** - Base de données NoSQL
+- **RabbitMQ** - Message broker
+- **Keycloak** - Identity Provider
+
+## 📁 Structure du Projet
+
+```
+projecttaskhub/
+├── config-server/          # Configuration centralisée
+├── discovery-server/       # Service discovery Eureka
+├── api-gateway/            # Passerelle API
+├── project-service/        # Service gestion projets
+├── task-service/           # Service gestion tâches (CQRS)
+├── shared-dto/             # DTOs partagés
+├── keycloak/              # Configuration Keycloak
+├── docker-compose.yml     # Orchestration Docker
+├── build.sh              # Script de build
+├── deploy.sh             # Script de déploiement
+├── test-services.sh      # Script de test
+├── stop.sh               # Script d'arrêt
+└── README.md             # Documentation
+```
+
+## 🧪 Tests
+
+### Tests Automatisés
+```bash
+./test-services.sh
+```
+
+### Tests Manuels avec curl
+
+**Créer un projet :**
+```bash
+curl -X POST "http://localhost:8080/api/projects" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Mon Projet",
+    "description": "Description du projet",
+    "startDate": "2024-01-01T10:00:00",
+    "status": "PLANNING"
+  }'
+```
+
+**Créer une tâche :**
+```bash
+curl -X POST "http://localhost:8080/api/tasks" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Ma Tâche",
+    "description": "Description de la tâche",
+    "projectId": 1,
+    "status": "TODO",
+    "priority": "MEDIUM"
+  }'
+```
+
+## 🔧 Configuration
+
+### Variables d'Environnement
+
+Les services peuvent être configurés via des variables d'environnement :
+
+- `SPRING_PROFILES_ACTIVE` - Profil actif (dev, prod)
+- `SPRING_CLOUD_CONFIG_URI` - URL du Config Server
+- `EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE` - URL Eureka
+- `SPRING_DATASOURCE_URL` - URL base de données
+- `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI` - URL Keycloak
+
+### Configuration Multi-Environnement
+
+Le Config Server gère les configurations pour différents environnements :
+- **dev** - Développement local
+- **prod** - Production
+
+## 🐛 Dépannage
+
+### Problèmes Courants
+
+1. **Services ne démarrent pas**
+   - Vérifier que Docker est en cours d'exécution
+   - Vérifier les ports disponibles
+   - Consulter les logs : `docker-compose logs <service>`
+
+2. **Erreurs d'authentification**
+   - Vérifier que Keycloak est démarré
+   - Vérifier la configuration du realm
+   - Régénérer un token
+
+3. **Erreurs de base de données**
+   - Vérifier que PostgreSQL/MongoDB sont accessibles
+   - Vérifier les credentials de connexion
+
+### Logs
+
+Consulter les logs des services :
+```bash
+docker-compose logs -f <service-name>
+```
+
+### Health Checks
+
+Vérifier l'état des services :
+```bash
+curl http://localhost:8080/actuator/health
+curl http://localhost:8081/actuator/health
+curl http://localhost:8082/actuator/health
+```
+
+## 🛑 Arrêt des Services
+
+```bash
+# Arrêt simple
+./stop.sh
+
+# Arrêt avec suppression des données
+./stop.sh --clean
+```
+
+## 🤝 Contribution
+
+1. Fork le projet
+2. Créer une branche feature (`git checkout -b feature/AmazingFeature`)
+3. Commit les changements (`git commit -m 'Add AmazingFeature'`)
+4. Push vers la branche (`git push origin feature/AmazingFeature`)
+5. Ouvrir une Pull Request
+
+## 📄 Licence
+
+Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
+
+## 📞 Support
+
+Pour toute question ou problème :
+- Créer une issue sur GitHub
+- Consulter la documentation
+- Vérifier les logs des services
+
+---
+
+🎉 **ProjectTaskHub est maintenant prêt à l'emploi !**

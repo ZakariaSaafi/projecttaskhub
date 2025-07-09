@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: discovery-server
+  cloud:
+    config:
+      uri: http://localhost:8888
+      username: config-admin
+      password: config-pass
+      fail-fast: true
+      retry:
+        initial-interval: 1000
+        multiplier: 1.1
+        max-attempts: 6
+        max-interval: 2000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,refresh
+  endpoint:
+    health:
+      show-details: always

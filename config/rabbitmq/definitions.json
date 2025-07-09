@@ -1,0 +1,112 @@
+{
+  "rabbit_version": "3.12.0",
+  "rabbitmq_version": "3.12.0",
+  "product_name": "RabbitMQ",
+  "product_version": "3.12.0",
+  "users": [
+    {
+      "name": "guest",
+      "password_hash": "IbqltCs/vIr2gBl4BVLWBOyIJe68eKx1JmqOzwOEooNPowNm",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": "administrator"
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "guest",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "topic_permissions": [],
+  "parameters": [],
+  "global_parameters": [
+    {
+      "name": "internal_cluster_id",
+      "value": "rabbitmq-cluster-id-projecttaskhub"
+    }
+  ],
+  "policies": [],
+  "queues": [
+    {
+      "name": "project.events.queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "classic"
+      }
+    },
+    {
+      "name": "task.events.queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "classic"
+      }
+    },
+    {
+      "name": "project.events.consumer.queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "classic"
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "project.exchange",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "task.exchange",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "project.exchange",
+      "vhost": "/",
+      "destination": "project.events.queue",
+      "destination_type": "queue",
+      "routing_key": "project.events",
+      "arguments": {}
+    },
+    {
+      "source": "project.exchange",
+      "vhost": "/",
+      "destination": "project.events.consumer.queue",
+      "destination_type": "queue",
+      "routing_key": "project.events",
+      "arguments": {}
+    },
+    {
+      "source": "task.exchange",
+      "vhost": "/",
+      "destination": "task.events.queue",
+      "destination_type": "queue",
+      "routing_key": "task.events",
+      "arguments": {}
+    }
+  ]
+}

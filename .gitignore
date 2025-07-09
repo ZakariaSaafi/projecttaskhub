@@ -1,0 +1,99 @@
+# =====================================
+# PERSONNALISATIONS OPTIONNELLES
+# =====================================
+
+# Si vous utilisez un frontend React/Angular
+# =====================================
+# React
+build/
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Angular
+/dist/
+/e2e/
+.angular/
+
+# Si vous utilisez Elasticsearch
+# =====================================
+elasticsearch-data/
+*.es
+
+# Si vous utilisez Redis
+# =====================================
+redis-data/
+dump.rdb
+
+# Si vous utilisez GraphQL
+# =====================================
+schema.graphql
+generated/
+
+# Si vous utilisez gRPC
+# =====================================
+*.proto.pb
+*_pb2.py
+*_pb2_grpc.py
+
+# Si vous avez des certificats SSL spécifiques
+# =====================================
+ssl/
+certificates/
+*.pem
+*.csr
+
+# Si vous utilisez Liquibase/Flyway
+# =====================================
+liquibase.properties
+flyway.conf
+
+# Si vous utilisez JHipster
+# =====================================
+.jhipster/
+jhipster-jdl.jh
+
+# Si vous utilisez JOOQ
+# =====================================
+src/generated/
+
+# Si vous utilisez des outils de profiling
+# =====================================
+*.hprof
+*.heap
+*.prof
+
+# Si vous stockez des données de test volumineuses
+# =====================================
+test-data/
+fixtures/
+mock-data/
+
+# Si vous utilisez des scripts de migration
+# =====================================
+migrations/output/
+migration-backup/
+
+# Configuration spécifique environnement
+# =====================================
+config/local/
+config/dev/
+config/staging/
+config/production/
+
+# Fichiers de configuration IDE spécifiques
+# =====================================
+# JetBrains (IntelliJ, WebStorm, etc.)
+.idea/codeStyles/
+.idea/dictionaries/
+.idea/shelf/
+
+# Eclipse additional
+.metadata/
+.recommenders/
+
+# VS Code additional
+.vscode/settings.json
+.vscode/tasks.json
+.vscode/launch.json

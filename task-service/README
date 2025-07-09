@@ -1,0 +1,78 @@
+# 📝 Task Service - Gestion des Tâches avec CQRS
+
+Service de gestion des tâches implémentant le pattern CQRS (Command Query Responsibility Segregation) avec MongoDB et RabbitMQ.
+
+## 🏗️ Architecture CQRS
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Controller    │    │   Command Side   │    │   Query Side    │
+│                 │    │                  │    │                 │
+│ ┌─────────────┐ │    │ ┌──────────────┐ │    │ ┌─────────────┐ │
+│ │   POST      │ ├────┤ │ CommandHandler│ │    │ │QueryHandler │ │
+│ │   PUT       │ │    │ │              │ │    │ │             │ │
+│ │   DELETE    │ │    │ └──────────────┘ │    │ └─────────────┘ │
+│ └─────────────┘ │    └──────────────────┘    └─────────────────┘
+│                 │              │                        │
+│ ┌─────────────┐ │              │                        │
+│ │   GET       │ ├──────────────┼────────────────────────┘
+│ └─────────────┘ │              │
+└─────────────────┘              │
+                                 ▼
+                     ┌─────────────────────┐
+                     │     MongoDB         │
+                     │   (Task Entity)     │
+                     └─────────────────────┘
+```
+
+## 🚀 Démarrage Rapide
+
+### Prérequis
+- Java 17+
+- Maven 3.8+
+- MongoDB (local ou Docker)
+- RabbitMQ (local ou Docker)
+
+### Installation
+
+1. **Cloner et compiler**
+```bash
+cd task-service
+chmod +x *.sh
+./build.sh
+```
+
+2. **Démarrer les dépendances**
+```bash
+# MongoDB
+docker run -d --name mongodb -p 27017:27017 mongo:7
+
+# RabbitMQ
+docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
+```
+
+3. **Exécuter l'application**
+```bash
+./run-local.sh
+```
+
+## 📋 API Endpoints
+
+### Commands (Write Operations)
+
+| Méthode | Endpoint | Description | Rôle Requis |
+|---------|----------|-------------|-------------|
+| POST | `/tasks` | Créer une tâche | USER |
+| PUT | `/tasks/{id}` | Modifier une tâche | USER |
+| DELETE | `/tasks/{id}` | Supprimer une tâche | ADMIN |
+
+### Queries (Read Operations)
+
+| Méthode | Endpoint | Description | Rôle Requis |
+|---------|----------|-------------|-------------|
+| GET | `/tasks` | Toutes les tâches | USER |
+| GET | `/tasks/{id}` | Tâche par ID | USER |
+| GET | `/tasks/paginated` | Tâches paginées | USER |
+| GET | `/tasks/project/{projectId}` | Tâches d'un projet | USER |
+| GET | `/tasks/my-tasks` | Mes tâches | USER |
+| GET | `/tasks/status/{status}`

@@ -1,0 +1,144 @@
+server:
+  port: 8888
+
+spring:
+  application:
+    name: config-server
+  profiles:
+    active: native
+  cloud:
+    config:
+      server:
+        native:
+          search-locations: classpath:/config
+        git:
+          uri: https://github.com/your-username/projecttaskhub-config
+          clone-on-start: true
+          default-label: main
+  security:
+    user:
+      name: config-admin
+      password: config-pass
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,refresh
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    org.springframework.cloud.config: DEBUG
+    org.springframework.security: DEBUG
+
+---
+# config-server/src/main/resources/config/api-gateway.yml
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+        - id: project-service
+          uri: lb://project-service
+          predicates:
+            - Path=/api/projects/**
+          filters:
+            - RewritePath=/api/projects/(?<segment>.*), /$\{segment}
+        - id: task-service
+          uri: lb://task-service
+          predicates:
+            - Path=/api/tasks/**
+          filters:
+            - RewritePath=/api/tasks/(?<segment>.*), /$\{segment}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+---
+# config-server/src/main/resources/config/project-service.yml
+server:
+  port: 8081
+
+spring:
+  application:
+    name: project-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/projectdb
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+---
+# config-server/src/main/resources/config/task-service.yml
+server:
+  port: 8082
+
+spring:
+  application:
+    name: task-service
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/taskdb
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+---
+# config-server/src/main/resources/config/discovery-server.yml
+server:
+  port: 8761
+
+spring:
+  application:
+    name: discovery-server
+
+eureka:
+  client:
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: http://localhost:8761/eureka/

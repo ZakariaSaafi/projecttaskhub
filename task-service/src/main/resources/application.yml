@@ -1,0 +1,77 @@
+# src/main/resources/application.yml
+spring:
+  application:
+    name: task-service
+  cloud:
+    config:
+      uri: http://localhost:8888
+      username: config-admin
+      password: config-pass
+      fail-fast: true
+      retry:
+        initial-interval: 1000
+        multiplier: 1.1
+        max-attempts: 6
+        max-interval: 2000
+
+# Configuration locale pour développement (sera surchargée par Config Server)
+server:
+  port: 8082
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+# MongoDB local (sera surchargée par Config Server)
+spring:
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/taskdb
+
+  # RabbitMQ local (sera surchargée par Config Server)
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+  # Configuration de sécurité locale
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/projecttaskhub
+
+# Logging
+logging:
+  level:
+    com.projecttaskhub.task: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.data.mongodb: DEBUG
+    org.springframework.amqp: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  info:
+    env:
+      enabled: true
+
+# Info de l'application
+info:
+  application:
+    name: Task Service
+    description: Service de gestion des tâches avec CQRS
+    version: 1.0.0
