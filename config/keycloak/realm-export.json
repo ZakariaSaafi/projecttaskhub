@@ -67,7 +67,7 @@
   "accountTheme": "",
   "adminTheme": "",
   "emailTheme": "",
-  "eventListeners": ["jboss-logging"],
+  "eventsListeners": ["jboss-logging"],
   "enabledEventTypes": [],
   "adminEventsEnabled": false,
   "adminEventsDetailsEnabled": false,
